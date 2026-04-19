@@ -181,15 +181,14 @@ const portfolio = [
 async function seed() {
   const conn = await mysql.createConnection({
     host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     multipleStatements: true,
   });
 
   console.log("🔧 Setting up database...");
-
-  await conn.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME}\``);
-  await conn.query(`USE \`${process.env.DB_NAME}\``);
 
   await conn.query(`
     CREATE TABLE IF NOT EXISTS stocks (
