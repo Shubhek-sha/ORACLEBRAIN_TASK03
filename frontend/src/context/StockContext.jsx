@@ -1,94 +1,142 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { stocksApi } from '../services/api';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { stocksApi, favoritesApi } from '../services/api';
+import { getSocket } from '../services/socket';
+import { useAuth } from './AuthContext';
 
 const StockContext = createContext(null);
 
-const REFRESH_INTERVAL = 15000; // 15 seconds
-const FAVORITES_KEY = 'stockpulse_favorites';
-
 export function StockProvider({ children }) {
+  const { isAuthenticated, user } = useAuth();
+
   const [stocks, setStocks]               = useState([]);
   const [portfolio, setPortfolio]         = useState([]);
   const [sectors, setSectors]             = useState([]);
-  const [topGainers, setTopGainers]       = useState([]);
-  const [topLosers, setTopLosers]         = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
   const [searchQuery, setSearchQuery]     = useState('');
   const [loading, setLoading]             = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError]                 = useState(null);
   const [lastUpdated, setLastUpdated]     = useState(null);
-  const [darkMode, setDarkMode]           = useState(() => {
-    return localStorage.getItem('stockpulse_theme') === 'dark';
-  });
-  const [favorites, setFavorites]         = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || [];
-    } catch {
-      return [];
-    }
-  });
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [darkMode, setDarkMode]           = useState(() =>
+    localStorage.getItem('stockpulse_theme') === 'dark'
+  );
+  const [favorites, setFavorites]         = useState([]);
+  const [toasts, setToasts]               = useState([]);
+  const toastId = useRef(0);
 
-  const prevPricesRef = useRef({});
-
-  // Apply dark mode class
+  // Dark mode
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('stockpulse_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('stockpulse_theme', 'light');
-    }
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('stockpulse_theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
-  // Persist favorites
+  // Toast management
+  const addToast = useCallback((message, type = 'success') => {
+    const id = ++toastId.current;
+    setToasts((prev) => [...prev, { id, message, type }]);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Socket: live price pushes
   useEffect(() => {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
-  }, [favorites]);
+    const socket = getSocket();
 
-  const fetchStocks = useCallback(async (isInitial = false) => {
-    if (isInitial) setLoading(true);
-    setError(null);
-    try {
-      const [stocksRes, gainersRes, losersRes, portfolioRes, sectorsRes] =
-        await Promise.all([
-          stocksApi.getAll(),
-          stocksApi.getTopGainers(),
-          stocksApi.getTopLosers(),
-          stocksApi.getPortfolio(),
-          stocksApi.getSectors(),
-        ]);
-
+    const onConnect = () => setSocketConnected(true);
+    const onDisconnect = () => setSocketConnected(false);
+    const onStocksUpdate = (incoming) => {
       setStocks((prev) => {
-        // Track price direction for flash animation
         const prevMap = {};
         prev.forEach((s) => (prevMap[s.symbol] = s.price));
-        prevPricesRef.current = prevMap;
-        return stocksRes.data.map((s) => ({
+        return incoming.map((s) => ({
           ...s,
           priceDirection:
-            prevMap[s.symbol] == null
-              ? null
-              : s.price > prevMap[s.symbol]
-              ? 'up'
-              : s.price < prevMap[s.symbol]
-              ? 'down'
-              : null,
+            prevMap[s.symbol] == null ? null
+            : s.price > prevMap[s.symbol] ? 'up'
+            : s.price < prevMap[s.symbol] ? 'down'
+            : null,
         }));
       });
+      setLastUpdated(new Date());
+    };
 
-      setTopGainers(gainersRes.data);
-      setTopLosers(losersRes.data);
+    socket.on('connect',       onConnect);
+    socket.on('disconnect',    onDisconnect);
+    socket.on('stocks:update', onStocksUpdate);
+
+    if (socket.connected) setSocketConnected(true);
+
+    return () => {
+      socket.off('connect',       onConnect);
+      socket.off('disconnect',    onDisconnect);
+      socket.off('stocks:update', onStocksUpdate);
+    };
+  }, []);
+
+  // Sync favorites from API when auth state changes
+  useEffect(() => {
+    if (!isAuthenticated) { setFavorites([]); return; }
+    favoritesApi.getAll()
+      .then((res) => setFavorites(res.data))
+      .catch(() => setFavorites([]));
+  }, [isAuthenticated, user?.id]);
+
+  const isFavorite = useCallback(
+    (symbol) => favorites.some((f) => f.symbol === symbol),
+    [favorites]
+  );
+
+  const toggleFavorite = useCallback(async (symbol, name) => {
+    if (!isAuthenticated) return;
+    const existing = favorites.find((f) => f.symbol === symbol);
+    if (existing) {
+      setFavorites((prev) => prev.filter((f) => f.symbol !== symbol));
+      try {
+        await favoritesApi.remove(existing.id);
+        addToast(`${symbol} removed from watchlist`, 'info');
+      } catch {
+        setFavorites((prev) => [...prev, existing]);
+        addToast('Failed to remove — try again', 'error');
+      }
+    } else {
+      const temp = { id: '__temp__', symbol, name };
+      setFavorites((prev) => [...prev, temp]);
+      try {
+        const res = await favoritesApi.add({ symbol, name });
+        setFavorites((prev) => prev.map((f) => (f.id === '__temp__' ? res.data : f)));
+        addToast(`${symbol} added to watchlist ⭐`, 'success');
+      } catch (err) {
+        setFavorites((prev) => prev.filter((f) => f.id !== '__temp__'));
+        addToast(err.message || 'Failed to add — try again', 'error');
+      }
+    }
+  }, [isAuthenticated, favorites, addToast]);
+
+  // Initial data load — portfolio + sectors + seed stocks (socket takes over prices)
+  const fetchInitial = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [stocksRes, portfolioRes, sectorsRes] = await Promise.all([
+        stocksApi.getAll(),
+        stocksApi.getPortfolio(),
+        stocksApi.getSectors(),
+      ]);
+      setStocks(stocksRes.data.map((s) => ({ ...s, priceDirection: null })));
       setPortfolio(portfolioRes.data);
       setSectors(sectorsRes.data);
       setLastUpdated(new Date());
     } catch (err) {
       setError(err.message);
     } finally {
-      if (isInitial) setLoading(false);
+      setLoading(false);
     }
   }, []);
+
+  useEffect(() => { fetchInitial(); }, [fetchInitial]);
 
   const fetchStockDetail = useCallback(async (symbol) => {
     setDetailLoading(true);
@@ -102,38 +150,37 @@ export function StockProvider({ children }) {
     }
   }, []);
 
-  // Initial load
-  useEffect(() => {
-    fetchStocks(true);
-  }, [fetchStocks]);
+  // Derive gainers/losers live from socket-updated stocks
+  const topGainers = useMemo(() =>
+    [...stocks].sort((a, b) => b.changePct - a.changePct).slice(0, 5),
+    [stocks]
+  );
 
-  // Auto-refresh
-  useEffect(() => {
-    const id = setInterval(() => fetchStocks(false), REFRESH_INTERVAL);
-    return () => clearInterval(id);
-  }, [fetchStocks]);
+  const topLosers = useMemo(() =>
+    [...stocks].sort((a, b) => a.changePct - b.changePct).slice(0, 5),
+    [stocks]
+  );
 
-  // Filtered stocks
-  const filteredStocks = stocks.filter((s) => {
+  const filteredStocks = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return (
+    if (!q) return stocks;
+    return stocks.filter((s) =>
       s.symbol.toLowerCase().includes(q) ||
       s.name.toLowerCase().includes(q) ||
       s.sector?.toLowerCase().includes(q)
     );
-  });
+  }, [stocks, searchQuery]);
 
-  const toggleFavorite = (symbol) => {
-    setFavorites((prev) =>
-      prev.includes(symbol) ? prev.filter((s) => s !== symbol) : [...prev, symbol]
-    );
-  };
-
-  const totalPortfolioValue = portfolio.reduce((acc, h) => acc + h.currentVal, 0);
-  const totalInvested = portfolio.reduce((acc, h) => acc + h.invested, 0);
-  const totalGainLoss = totalPortfolioValue - totalInvested;
-  const totalGainLossPct =
-    totalInvested > 0 ? ((totalGainLoss / totalInvested) * 100).toFixed(2) : 0;
+  const totalPortfolioValue = useMemo(() =>
+    portfolio.reduce((acc, h) => acc + h.currentVal, 0), [portfolio]
+  );
+  const totalInvested = useMemo(() =>
+    portfolio.reduce((acc, h) => acc + h.invested, 0), [portfolio]
+  );
+  const totalGainLoss    = totalPortfolioValue - totalInvested;
+  const totalGainLossPct = totalInvested > 0
+    ? ((totalGainLoss / totalInvested) * 100).toFixed(2)
+    : 0;
 
   return (
     <StockContext.Provider
@@ -152,6 +199,9 @@ export function StockProvider({ children }) {
         lastUpdated,
         darkMode,
         favorites,
+        isFavorite,
+        socketConnected,
+        toasts,
         totalPortfolioValue,
         totalInvested,
         totalGainLoss,
@@ -160,8 +210,10 @@ export function StockProvider({ children }) {
         setSelectedStock,
         fetchStockDetail,
         toggleFavorite,
+        addToast,
+        removeToast,
         toggleDarkMode: () => setDarkMode((d) => !d),
-        refresh: () => fetchStocks(false),
+        refresh: fetchInitial,
       }}
     >
       {children}

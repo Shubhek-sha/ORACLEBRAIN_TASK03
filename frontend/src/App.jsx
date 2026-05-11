@@ -1,11 +1,15 @@
 import React from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { StockProvider } from './context/StockContext';
+import AuthPage from './components/AuthPage';
 import Navbar from './components/Navbar';
 import PortfolioChart from './components/PortfolioChart';
 import HoldingsTable from './components/HoldingsTable';
 import TopMovers from './components/TopMovers';
 import SectorChart from './components/SectorChart';
+import FavoritesSection from './components/FavoritesSection';
 import ErrorBanner from './components/ErrorBanner';
+import Toast from './components/Toast';
 
 function Dashboard() {
   return (
@@ -21,8 +25,9 @@ function Dashboard() {
             <HoldingsTable />
           </div>
 
-          {/* Right: gainers + losers + sector */}
+          {/* Right: watchlist + gainers/losers + sectors */}
           <div className="col-span-1 space-y-4">
+            <FavoritesSection />
             <TopMovers />
             <SectorChart />
           </div>
@@ -32,14 +37,27 @@ function Dashboard() {
       <footer className="text-center py-4 text-xs text-gray-400 border-t border-gray-200 mt-4">
         Data: Yahoo Finance &nbsp;|&nbsp; Design: Yash Sakhuja
       </footer>
+
+      <Toast />
     </div>
+  );
+}
+
+function AppContent() {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? (
+    <StockProvider>
+      <Dashboard />
+    </StockProvider>
+  ) : (
+    <AuthPage />
   );
 }
 
 export default function App() {
   return (
-    <StockProvider>
-      <Dashboard />
-    </StockProvider>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

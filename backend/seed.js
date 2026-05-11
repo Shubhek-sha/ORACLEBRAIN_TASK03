@@ -216,6 +216,30 @@ async function seed() {
     )
   `);
 
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      name          VARCHAR(100) NOT NULL,
+      email         VARCHAR(255) UNIQUE NOT NULL,
+      password      VARCHAR(255) NOT NULL,
+      refresh_token TEXT,
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      id       INT AUTO_INCREMENT PRIMARY KEY,
+      user_id  INT NOT NULL,
+      symbol   VARCHAR(10) NOT NULL,
+      name     VARCHAR(100) NOT NULL,
+      added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE KEY unique_user_symbol (user_id, symbol)
+    )
+  `);
+
   // Clear and re-seed
   await conn.query("DELETE FROM portfolio");
   await conn.query("DELETE FROM stocks");

@@ -34,21 +34,35 @@
     @apply inline-flex items-center gap-0.5 text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-xs font-semibold;
   }
   .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-xl transition-colors duration-150;
+    @apply bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-medium px-4 py-2 rounded-xl transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .price {
     @apply font-mono font-semibold;
   }
 }
 
-/* Ticker flash animation */
+/* Price flash animations */
 @keyframes flash-green {
   0%, 100% { background-color: transparent; }
-  50% { background-color: rgba(16, 185, 129, 0.15); }
+  30%       { background-color: rgba(16, 185, 129, 0.18); }
 }
 @keyframes flash-red {
   0%, 100% { background-color: transparent; }
-  50% { background-color: rgba(239, 68, 68, 0.15); }
+  30%       { background-color: rgba(239, 68, 68, 0.18); }
 }
-.flash-gain { animation: flash-green 0.6s ease-in-out; }
-.flash-loss { animation: flash-red 0.6s ease-in-out; }
+.flash-gain { animation: flash-green 0.7s ease-in-out; }
+.flash-loss { animation: flash-red  0.7s ease-in-out; }
+
+/* Toast slide-in */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-toast-in { animation: toast-in 0.22s ease-out forwards; }
+
+/* Live dot pulse */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.85); }
+}
+.live-dot { animation: live-pulse 1.4s ease-in-out infinite; }

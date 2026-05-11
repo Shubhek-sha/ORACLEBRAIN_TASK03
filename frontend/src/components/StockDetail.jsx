@@ -8,6 +8,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useStock } from '../context/StockContext';
+import { useAuth } from '../context/AuthContext';
 import { DetailSkeleton } from './LoadingSkeleton';
 
 function fmt(n) {
@@ -47,12 +48,13 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function StockDetail() {
-  const { selectedStock, setSelectedStock, detailLoading, favorites, toggleFavorite } = useStock();
+  const { selectedStock, setSelectedStock, detailLoading, isFavorite, toggleFavorite } = useStock();
+  const { isAuthenticated } = useAuth();
 
   if (!selectedStock && !detailLoading) return null;
 
-  const isGain   = selectedStock?.changePct >= 0;
-  const isFav    = favorites.includes(selectedStock?.symbol);
+  const isGain    = selectedStock?.changePct >= 0;
+  const isFav     = isFavorite(selectedStock?.symbol);
   const sparkData = selectedStock?.sparkline?.map((v, i) => ({ i, v })) ?? [];
   const chartColor = isGain ? '#10b981' : '#ef4444';
 
@@ -77,7 +79,7 @@ export default function StockDetail() {
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{selectedStock.symbol.slice(0,2)}</span>
+                <span className="text-white font-bold text-sm">{selectedStock.symbol.slice(0, 2)}</span>
               </div>
               <div>
                 <h2 className="font-bold text-lg leading-none">{selectedStock.symbol}</h2>
@@ -86,8 +88,17 @@ export default function StockDetail() {
               </div>
             </div>
             <button
-              onClick={() => toggleFavorite(selectedStock.symbol)}
-              className={`p-2 rounded-xl transition-colors ${isFav ? 'text-amber-400 bg-amber-50 dark:bg-amber-950' : 'text-slate-400 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950'}`}
+              onClick={() => {
+                if (isAuthenticated) toggleFavorite(selectedStock.symbol, selectedStock.name);
+              }}
+              title={isAuthenticated ? (isFav ? 'Remove from watchlist' : 'Add to watchlist') : 'Sign in to save favorites'}
+              className={`p-2 rounded-xl transition-colors ${
+                isFav
+                  ? 'text-amber-400 bg-amber-50 dark:bg-amber-950'
+                  : isAuthenticated
+                    ? 'text-slate-400 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950'
+                    : 'text-slate-300 opacity-40 cursor-default'
+              }`}
             >
               <Star size={16} fill={isFav ? 'currentColor' : 'none'} />
             </button>
@@ -138,14 +149,11 @@ export default function StockDetail() {
 
           {/* Metrics grid */}
           <div className="grid grid-cols-2 gap-2.5">
-            <MetricTile label="Day High"    value={fmt(selectedStock.dayHigh)} />
-            <MetricTile label="Day Low"     value={fmt(selectedStock.dayLow)} />
-            <MetricTile label="Volume"      value={fmtVol(selectedStock.volume)} />
-            <MetricTile label="Market Cap"  value={selectedStock.market_cap} />
-            <MetricTile
-              label="Prev Close"
-              value={fmt(selectedStock.prev_close)}
-            />
+            <MetricTile label="Day High"   value={fmt(selectedStock.dayHigh)} />
+            <MetricTile label="Day Low"    value={fmt(selectedStock.dayLow)} />
+            <MetricTile label="Volume"     value={fmtVol(selectedStock.volume)} />
+            <MetricTile label="Market Cap" value={selectedStock.market_cap} />
+            <MetricTile label="Prev Close" value={fmt(selectedStock.prev_close)} />
             <MetricTile
               label="Last Updated"
               value={new Date(selectedStock.last_updated).toLocaleTimeString([], {

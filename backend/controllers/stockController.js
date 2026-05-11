@@ -58,7 +58,7 @@ async function getStockBySymbol(req, res) {
     const changePct = parseFloat(((change / s.prev_close) * 100).toFixed(2));
 
     // Generate 30-point intraday sparkline
-    const sparkline = generateSparkline(s.prev_close, livePrice, 30);
+    const sparkline = generateSparkline(parseFloat(s.prev_close), livePrice, 30);
 
     res.json({
       success: true,
